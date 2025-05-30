@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:13
+    container_name: postgres # Name of the PostgreSQL container
+    env_file: .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Persistent storage for PostgreSQL
+      - ./init:/docker-entrypoint-initdb.d # For initialization scripts
+    ports:
+      - "5432:5432"
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    env_file: .env
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_storage:/var/lib/grafana
+
+  airflow-init:
+    image: apache/airflow:2.8.1-python3.9
+    depends_on:
+      - postgres
+    env_file: .env
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db init
+        airflow users create \
+          --username robi \
+          --firstname Robi \
+          --lastname Munawir \
+          --role Admin \
+          --email robimunawir1@gmail.com \
+          --password robimunawir
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./etl:/opt/airflow/etl
+      - ./logs:/opt/airflow/logs
+      - ./data:/opt/airflow/data
+      - ./output:/opt/airflow/output
+      - ./requirements.txt:/requirements.txt
+
+  airflow-webserver:
+    build: .
+    container_name: airflow-webserver
+    restart: always
+    depends_on:
+      - postgres
+    env_file: .env
+    ports:
+      - "8088:8080"
+    command: webserver
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./etl:/opt/airflow/etl
+      - ./logs:/opt/airflow/logs
+      - ./data:/opt/airflow/data
+      - ./output:/opt/airflow/output
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  airflow-scheduler:
+    build: .
+    container_name: airflow-scheduler
+    restart: always
+    depends_on:
+      - postgres
+    env_file: .env
+    command: scheduler
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./etl:/opt/airflow/etl
+      - ./logs:/opt/airflow/logs
+      - ./data:/opt/airflow/data
+      - ./output:/opt/airflow/output
+
+volumes:
+  postgres_data:
+  grafana_storage:
